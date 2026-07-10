@@ -1,4 +1,11 @@
 
+
+-----------------------------------------------------------------------
+This script was produced and tested by Chirag Mehra, for the work found in the manuscript: 
+Mehra et al., (2026): "EEG functional connectivity as a prognostic biomarker of adaptive function in autistic people"
+Please cite the most up to date version of the manuscript when using this script
+-----------------------------------------------------------------------
+
 ```{r}
 library(pROC)
 library(readxl)
