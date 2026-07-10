@@ -1,0 +1,1799 @@
+
+```{r}
+library(pROC)
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(tidyverse)
+
+library(psych)
+library(fastDummies)
+library(interactions)
+library(carData)
+library(Hmisc)
+library(readxl) 
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(ggpubr)
+library(tidyverse)
+library(corrplot)
+library(cowplot)
+library(qwraps2)
+library(magrittr)
+library(lsr)
+library(tidyr)
+library(rstatix)
+library(olsrr)
+library(caret)
+library(phd)
+library(arsenal)
+library(openxlsx)
+library(car)
+
+```
+
+
+```{r}
+cat("\014") # clear screen
+rm(list=ls()) %>% gc(verbose = FALSE)  # Clear workspace and free memory
+
+#set working directory
+
+#load document
+
+
+
+b$ASD_TDC <- as.factor(b$ASD_TDC)
+b$ASD_TDC <- factor(b$ASD_TDC, levels = c("TDC", "ASD"))
+
+b$t1_sex <- as.factor(b$t1_sex)
+b$Vineland_difference <- as.numeric(b$Vineland_difference)
+b$average_head_circumference <- as.numeric(b$average_head_circumference)
+b$t1_group <- as.factor(b$t1_group)
+```
+
+```{r}
+b <- b %>%
+  mutate(age_difference = (t2_age - t1_age)/30.417)
+
+b <- b %>% mutate(AgeBin = case_when(t1_age_years >= 6  & t1_age_years < 15 ~ '6-15',
+                                     t1_age_years >= 15  & t1_age_years < 25 ~ '15-24',
+                                             t1_age_years >= 25  & t1_age_years <= 32 ~ '25-31')) 
+         
+b_nonID <- filter(b, ID_nonID == 'nonID')
+ASD_nonID <- filter(b_nonID, t1_group == 'ASD')
+
+#DEFINE VINELAND DATA
+
+Vineland_data = filter(ASD_nonID, Vineland_difference != 'NA')
+
+Vineland_data <- Vineland_data %>%
+  arrange(t1_age_years)
+
+#SCALING VARIABLES PRIOR TO HAVING THEM IN A GLM
+
+# Define the list of predictors from your formula
+Vineland_data$age_for_filtering <- Vineland_data$t1_age_years
+
+predictors <- c(
+  "PLV_6_9_DK_mean_SWI", "t1_fsiq",
+                "PLV_6_9_DK_mean_mean_degree",
+                "t1_vabsabcabc_standard", "t1_age_years","t1_age",
+                "age_difference")
+
+# Scale only the predictors
+Vineland_data <- Vineland_data %>%
+  mutate(across(all_of(predictors), ~ as.numeric(scale(.))))
+
+#AGE GROUPS
+Vineland_data_young = filter(Vineland_data, AgeBin == '6-15')
+Vineland_data_middle =filter(Vineland_data, AgeBin == '15-22')
+Vineland_data_old = filter(Vineland_data, AgeBin == '22-31')
+
+
+```
+
+
+#all participants age group analysis
+```{r}
+
+predictors <- c(
+  "PLV_6_9_DK_mean_SWI", "t1_fsiq",
+                "PLV_6_9_DK_mean_mean_degree",
+                "t1_vabsabcabc_standard", "t1_age_years",
+                "age_difference")
+
+# Scale only the predictors
+b_nonID <- b_nonID %>%
+  mutate(across(all_of(predictors), ~ as.numeric(scale(.))))
+
+young_nonID <- filter(b_nonID, AgeBin == '6-15')
+middle_nonID <- filter(b_nonID, AgeBin == '15-24')
+old_nonID <- filter(b_nonID, AgeBin == '25-31')
+
+```
+
+
+#Best models for paper with age groups - 19/3/2024
+```{r}
+#MD
+MD <- lm(scale(PLV_6_9_DK_mean_mean_degree) ~ ASD_TDC + t1_age_years + I(t1_age_years^2) + t1_site + t1_sex, data = young_nonID) #best model
+summary(MD) 
+
+MD <- lm(scale(PLV_6_9_DK_mean_mean_degree) ~ ASD_TDC + t1_age_years + t1_sex + t1_site, data = middle_nonID)
+summary(MD) 
+
+MD <- lm(scale(PLV_6_9_DK_mean_mean_degree) ~ ASD_TDC + t1_age_years + I(t1_age_years^2) + t1_site, data = old_nonID)
+summary(MD) 
+
+#SWI
+MD <- lm(scale(PLV_6_9_DK_mean_SWI) ~ ASD_TDC + t1_age_years + I(t1_age_years^2) + t1_site, data = young_nonID)
+summary(MD) 
+
+MD <- lm(scale(PLV_6_9_DK_mean_SWI) ~ ASD_TDC + t1_age_years  + t1_site + t1_sex, data = middle_nonID)
+summary(MD) 
+
+MD <- lm(scale(PLV_6_9_DK_mean_SWI) ~ ASD_TDC, data = old_nonID)
+summary(MD) 
+
+```
+
+
+#GRAPHS FOR PAPER - AGE VS GRAPH THEORY - group differences
+```{r}
+
+PLV_6_9_DK_mean_mean_degree_resid <- resid(lm(PLV_6_9_DK_mean_mean_degree ~ t1_age_years + I(t1_age_years^2) + t1_site + t1_sex, data = young_nonID))
+
+#YOUNG MD
+number_matricies <- ggplot(young_nonID, aes(x = ASD_TDC, y = PLV_6_9_DK_mean_mean_degree_resid, color = ASD_TDC))+
+  geom_jitter()+ geom_boxplot(alpha = 0.5, outlier.shape = NA)+
+  scale_color_manual(values=c("#0086EA","orange"))+
+  labs(x="", y = "Mean degree (residual)", col = "Group", shape = "Group") +
+  theme(panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15))
+number_matricies
+
+#MD middle
+PLV_6_9_DK_mean_md_resid <- resid(lm(PLV_6_9_DK_mean_mean_degree ~ t1_age_years + t1_sex + t1_site, data = middle_nonID))
+
+number_matricies <- ggplot(middle_nonID, aes(x = ASD_TDC, y = PLV_6_9_DK_mean_md_resid, color = ASD_TDC))+
+  geom_jitter()+ geom_boxplot(alpha = 0.5,outlier.shape = NA)+
+  scale_color_manual(values=c("#0086EA","orange"))+
+  labs(x="", y = "Mean degree (residual)", col = "Group", shape = "Group") +
+  theme(panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15))
+number_matricies
+
+#MD OLD
+PLV_6_9_DK_mean_mean_degree_resid <- resid(lm(PLV_6_9_DK_mean_mean_degree ~ t1_age_years + I(t1_age_years^2) + t1_site, data = old_nonID))
+
+number_matricies <- ggplot(old_nonID, aes(x = ASD_TDC, y = PLV_6_9_DK_mean_mean_degree_resid, color = ASD_TDC))+
+  geom_jitter()+ geom_boxplot(alpha = 0.5,outlier.shape = NA)+
+  scale_color_manual(values=c("#0086EA","orange"))+
+  labs(x="", y = "Mean degree (residual)", col = "Group", shape = "Group") +
+  theme(panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15))
+number_matricies
+
+#YOUNG SWI
+PLV_6_9_DK_mean_SWI_resid <- resid(lm(PLV_6_9_DK_mean_SWI ~ t1_age_years + I(t1_age_years^2) + t1_site, data = young_nonID))
+
+number_matricies <- ggplot(young_nonID, aes(x = ASD_TDC, y = PLV_6_9_DK_mean_SWI_resid, color = ASD_TDC))+
+  geom_jitter()+ geom_boxplot(alpha = 0.5,outlier.shape = NA)+
+  scale_color_manual(values=c("#0086EA","orange"))+
+  labs(x="", y = "Small world index (residual)", col = "Group", shape = "Group") +
+  theme(panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15))
+number_matricies
+
+# MIDDLE SWI
+PLV_6_9_DK_mean_SWI_resid <- resid(lm(PLV_6_9_DK_mean_SWI ~ t1_age_years + t1_site  + t1_sex , data = middle_nonID))
+
+number_matricies <- ggplot(middle_nonID, aes(x = ASD_TDC, y = PLV_6_9_DK_mean_SWI_resid, color = ASD_TDC))+
+  geom_jitter()+ geom_boxplot(alpha = 0.5,outlier.shape = NA)+
+  scale_color_manual(values=c("#0086EA","orange"))+
+  labs(x="", y = "Small world index (residual)", col = "Group", shape = "Group") +
+  theme(panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15))
+number_matricies
+
+#SWI OLD
+number_matricies <- ggplot(old_nonID, aes(x = ASD_TDC, y = PLV_6_9_DK_mean_SWI, color = ASD_TDC))+
+  geom_jitter()+ geom_boxplot(alpha = 0.5,outlier.shape = NA)+
+  scale_color_manual(values=c("#0086EA","orange"))+
+  labs(x="", y = "Small world index", col = "Group", shape = "Group") +
+  theme(panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15))
+number_matricies
+
+```
+
+#significant Vineland models - 18/04/2025
+```{r}
+m2 <- lm(Vineland_difference ~  PLV_6_9_DK_mean_SWI + t1_fsiq + t1_vabsabcabc_standard + t1_age_years*age_difference + t1_sex, data = Vineland_data_middle)
+summary(m2) # best AIC
+effectsize::eta_squared(car::Anova(m2, type = 2), partial = FALSE)
+
+m2 <- lm(Vineland_difference ~  t1_fsiq + t1_vabsabcabc_standard + t1_age_years*age_difference + t1_sex, data = Vineland_data_middle)
+summary(m2) # best AIC
+
+m3 <- lm(Vineland_difference ~ PLV_6_9_DK_mean_mean_degree + t1_fsiq + t1_vabsabcabc_standard + t1_age*age_difference +t1_sex + t1_site, data = Vineland_data_middle)
+summary(m3) # best AIC
+effectsize::eta_squared(car::Anova(m3, type = 2), partial = FALSE)
+
+
+m3 <- lm(Vineland_difference ~  t1_fsiq + t1_vabsabcabc_standard + t1_age*age_difference +t1_sex + t1_site, data = Vineland_data_middle)
+summary(m3) # best AIC
+
+
+```
+
+
+#Best Vineland predictive models for paper - 29/3/24 - SWI - IQ INCLUDED IF NEEDED - ENSURE EVERYTHING IS SCALED
+```{r}
+
+#6-31 SWI
+m1 <- lm(Vineland_difference ~ PLV_6_9_DK_mean_SWI + t1_fsiq + t1_vabsabcabc_standard + t1_age_years*age_difference + t1_site, data = ASD_nonID)
+summary(m1) # best AIC
+effectsize::eta_squared(car::Anova(m1, type = 2), partial = FALSE)
+
+m1 <- lm(Vineland_difference ~ t1_fsiq + t1_vabsabcabc_standard + t1_age_years*age_difference + t1_site, data = ASD_nonID)
+summary(m1) # best AIC
+
+#6-14 SWI
+m1 <- lm(Vineland_difference ~ PLV_6_9_DK_mean_SWI + t1_vabsabcabc_standard + t1_age_years* age_difference, data = Vineland_data_young)
+summary(m1) # best AIC
+effectsize::eta_squared(car::Anova(m1, type = 2), partial = FALSE)
+
+#15-24 SWI
+m1 <- lm(Vineland_difference ~  PLV_6_9_DK_mean_SWI + t1_fsiq + t1_vabsabcabc_standard + t1_age_years*age_difference + t1_sex, data = Vineland_data_middle)
+summary(m1) # best AIC
+effectsize::eta_squared(car::Anova(m1, type = 2), partial = FALSE)
+
+m1 <- lm(Vineland_difference ~  t1_fsiq + t1_vabsabcabc_standard + t1_age_years*age_difference + t1_sex, data = Vineland_data_middle)
+summary(m1) # best AIC
+```
+
+#Best Vineland predictive models for paper - 29/3/24 - MD - IQ INCLUDED
+```{r}
+#MD 6-31
+m1 <- lm(Vineland_difference ~ PLV_6_9_DK_mean_mean_degree + t1_fsiq + t1_vabsabcabc_standard +  t1_age_years*age_difference + t1_site, data = ASD_nonID)
+summary(m1) # best AIC
+effectsize::eta_squared(car::Anova(m1, type = 2), partial = FALSE)
+
+#MD 6-14
+m1 <- lm(Vineland_difference ~ PLV_6_9_DK_mean_mean_degree + t1_vabsabcabc_standard +  t1_age_years+age_difference +t1_sex + t1_site, data = Vineland_data_young)
+summary(m1) # best AIC
+effectsize::eta_squared(car::Anova(m1, type = 2), partial = FALSE)
+
+#MD 15-24
+m1 <- lm(Vineland_difference ~ PLV_6_9_DK_mean_mean_degree + t1_fsiq + t1_vabsabcabc_standard + t1_age_years*age_difference +t1_sex + t1_site, data = Vineland_data_middle)
+summary(m1) # best AIC
+effectsize::eta_squared(car::Anova(m1, type = 2), partial = FALSE)
+
+m1 <- lm(Vineland_difference ~ t1_fsiq + t1_vabsabcabc_standard + t1_age_years*age_difference +t1_sex + t1_site, data = Vineland_data_middle)
+summary(m1) # best AIC
+```
+
+
+
+#Figures SIGNIFICANT VINELAND PREDICTIVE MODELS - IQ
+```{r}
+md_mid_resid <- resid(lm(PLV_6_9_DK_mean_mean_degree ~ t1_vabsabcabc_standard + t1_fsiq + t1_age*age_difference + t1_site + t1_sex, data = Vineland_data_middle))
+Vineland_diff_mid_resid <-resid(lm(Vineland_difference ~ t1_vabsabcabc_standard + t1_fsiq + t1_age*age_difference + t1_site + t1_sex, data = Vineland_data_middle))
+
+MD_mid <- ggplot(Vineland_data_middle, aes(x = md_mid_resid, y = Vineland_diff_mid_resid)) + geom_point()+
+  geom_smooth(method='lm', se = FALSE)+
+  labs(title = "c) Relationship between mean degree and \n change in ABC scores in autistic 15-24-year-olds",
+         x="Mean degree (residual)", y = "ΔABC score (residual)")+
+  theme(aspect.ratio = 0.7, panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15))
+MD_mid
+
+
+SWI_mid_resid <- resid(lm(PLV_6_9_DK_mean_SWI ~ t1_vabsabcabc_standard + t1_fsiq + t1_age*age_difference + t1_sex, data = Vineland_data_middle))
+Vineland_diff_SWI_mid_resid <-resid(lm(Vineland_difference ~ t1_vabsabcabc_standard + t1_fsiq + t1_age*age_difference + t1_sex, data = Vineland_data_middle))
+
+SWI_mid <- ggplot(Vineland_data_middle, aes(x = SWI_mid_resid, y = Vineland_diff_SWI_mid_resid)) + geom_point()+
+  geom_smooth(method='lm', se = FALSE)+
+  labs(title = "d) Relationship between small-world index and \n change in ABC scores in autistic 15-24-year-olds",
+         x="Small world index (residual)", y = "ΔABC score (residual)")+
+  theme(aspect.ratio = 0.7, panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15))
+
+SWI_mid
+
+SWI_resid <- resid(lm(PLV_6_9_DK_mean_SWI ~ t1_vabsabcabc_standard + t1_fsiq + t1_age*age_difference + t1_site, data = Vineland_data_scaled))
+Vineland_diff_SWI_resid <-resid(lm(Vineland_difference ~ t1_vabsabcabc_standard + t1_fsiq + t1_age*age_difference + t1_site, data = Vineland_data_scaled))
+
+SWI_all <- ggplot(Vineland_data_scaled, aes(x = SWI_resid, y = Vineland_diff_SWI_resid)) + geom_point()+
+  geom_smooth(method='lm', se = FALSE)+
+  labs(title = "b) Relationship between small-world index and \n change in ABC scores in autistic 6-31-year-olds",x="Small world index (residual)", y = "ΔABC score (residual)")+
+  theme(aspect.ratio = 0.7, panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15)) 
+SWI_all
+
+#MD all
+MD_resid <- resid(lm(PLV_6_9_DK_mean_mean_degree ~ t1_vabsabcabc_standard + t1_fsiq + t1_age*age_difference + t1_site, data = Vineland_data_scaled))
+Vineland_diff_MD_resid <-resid(lm(Vineland_difference ~ t1_vabsabcabc_standard + t1_fsiq + t1_age*age_difference + t1_site, data = Vineland_data_scaled))
+
+MD_all <- ggplot(Vineland_data_scaled, aes(x = MD_resid, y = Vineland_diff_MD_resid)) + geom_point()+
+  geom_smooth(method='lm', se = FALSE)+
+  labs(title = "a) Relationship between mean degree and \n change in ABC scores in autistic 6-31-year-olds",x="Mean degree (residual)", y = "ΔABC score (residual)")+
+  theme(aspect.ratio = 0.7, panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15)) 
+MD_all
+
+```
+
+#SCALING VARIABLES PRIOR TO GLM
+```{r}
+#start from b
+b_nonID <- filter(b, ID_nonID == 'nonID')
+ASD_nonID <- filter(b, t1_group == 'ASD')
+Vineland_data = filter(ASD_nonID, Vineland_difference != 'NA')
+
+# Define the list of predictors from your formula
+Vineland_data$age_for_filtering <- Vineland_data$t1_age_years
+
+predictors <- c(
+  "PLV_6_9_DK_mean_SWI", "t1_fsiq", 
+                "PLV_6_9_DK_mean_mean_degree",
+                "t1_vabsabcabc_standard", "t1_age_years", 
+  "PLV_6_9_DK_mean_degree_1" , "PLV_6_9_DK_SWI_1",
+                "age_difference")
+
+# Scale only the predictors
+Vineland_data_scaled <- Vineland_data %>%
+  mutate(across(all_of(predictors), ~ as.numeric(scale(.))))
+
+#AGE GROUPS
+Vineland_data_young = filter(Vineland_data_scaled, AgeBin == '6-15')
+Vineland_data_middle =filter(Vineland_data_scaled, AgeBin == '15-22')
+Vineland_data_old = filter(Vineland_data_scaled, AgeBin == '22-31')
+```
+
+
+#SLIDING WINDOW BY INDEX - SWI
+```{r}
+# 1. First, order the participants by age
+Vineland_ordered <- Vineland_data_scaled %>%
+  arrange(age_for_filtering)
+
+# 2. Define the sliding window parameters
+window_size <- 30
+step_size <- 5
+total_n <- nrow(Vineland_ordered)
+
+# Calculate the absolute last possible start index
+last_start_possible <- total_n - window_size + 1
+
+# Generate indices: 1, 6, 11... 
+start_indices <- seq(1, last_start_possible, by = step_size)
+
+# FEATURE: If the step sequence missed the final index (52), add it manually
+if (tail(start_indices, 1) != last_start_possible) {
+  start_indices <- c(start_indices, last_start_possible)
+}
+
+results_list <- list()
+
+# 3. The Sliding Loop (by index)
+# We stop when the window can no longer fit 30 participants
+for (start_idx in start_indices) {
+  
+  end_idx <- start_idx + window_size - 1
+  
+  # Extract the specific 30 participants for this bin
+  bin_data <- Vineland_ordered[start_idx:end_idx, ]
+  
+  # Check for factor level diversity (e.g., both sexes must be present)
+  if (length(unique(bin_data$t1_sex)) > 1) {
+    
+    # Run the GLM (Linear Model)
+    m_bin <- lm(Vineland_difference ~ PLV_6_9_DK_mean_SWI + t1_fsiq + 
+                t1_vabsabcabc_standard + t1_age_years * age_difference + t1_sex, 
+                data = bin_data)
+    
+    
+    # Extract stats for the specific predictor
+    stats <- tidy(m_bin) %>% 
+      filter(term == "PLV_6_9_DK_mean_SWI")
+    
+    if (nrow(stats) > 0) {
+      results_list[[paste0("idx_", start_idx)]] <- data.frame(
+        n_in_bin = nrow(bin_data),
+        min_age = min(bin_data$age_for_filtering, na.rm = TRUE),
+        max_age = max(bin_data$age_for_filtering, na.rm = TRUE),
+        avg_age = mean(bin_data$age_for_filtering, na.rm = TRUE),
+        beta_estimate = stats$estimate,
+        std_error = stats$std.error,
+        p_value = stats$p.value
+        
+      )
+    }
+  }
+}
+
+# 4. Combine into final dataframe
+rolling_results_idx <- bind_rows(results_list)
+
+rolling_results_idx <- rolling_results_idx %>%
+  mutate(p_FDR = p.adjust(p_value, method = "BH"))
+
+rolling_results_idx <- rolling_results_idx %>%
+  mutate(sig_star = ifelse(p_FDR < 0.05, "*", ""))
+
+#from the rolling results df, remove the second to last row
+rolling_results_idx <- rolling_results_idx[- (nrow(rolling_results_idx) - 1), ]
+
+# View the output
+print(rolling_results_idx)
+```
+
+```{r}
+rolling_SWI = ggplot(rolling_results_idx, aes(x = avg_age, y = beta_estimate)) +
+  geom_hline(yintercept = 0, linetype = "dashed", size = 1) +
+  geom_line(color = "royalblue", size = 1) +
+  geom_point() +
+  geom_ribbon(aes(ymin = beta_estimate - std_error, 
+                  ymax = beta_estimate + std_error), 
+              alpha = 0.2, fill = "royalblue") +
+  labs(title = "f) Effect size of SWI on ΔABC score across age",
+       x = "Average Age in Bin",
+       y = "Estimated coefficient - SWI") +
+  geom_text(aes(label = sig_star, y = 0.5), 
+            size = 8, 
+            color = "black") +
+  scale_x_continuous(breaks = seq(6, 32, by = 2)) +
+  theme_minimal()+
+    theme(aspect.ratio = 0.6,panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15))
+
+
+rolling_SWI
+```
+
+#SLIDING WINDOW BY INDEX - MD
+```{r}
+# 1. First, order the participants by age
+Vineland_ordered <- Vineland_data_scaled %>%
+  arrange(age_for_filtering)
+
+# 2. Define the sliding window parameters
+window_size <- 30
+step_size <- 5
+total_n <- nrow(Vineland_ordered)
+
+# Calculate the absolute last possible start index
+last_start_possible <- total_n - window_size + 1
+
+# Generate indices: 1, 6, 11... 
+start_indices <- seq(1, last_start_possible, by = step_size)
+
+# FEATURE: If the step sequence missed the final index (52), add it manually
+if (tail(start_indices, 1) != last_start_possible) {
+  start_indices <- c(start_indices, last_start_possible)
+}
+
+results_list <- list()
+
+# 3. The Sliding Loop (by index)
+# We stop when the window can no longer fit 30 participants
+for (start_idx in start_indices) {
+  
+  end_idx <- start_idx + window_size - 1
+  
+  # Extract the specific 30 participants for this bin
+  bin_data <- Vineland_ordered[start_idx:end_idx, ]
+  
+  # Check for factor level diversity (e.g., both sexes must be present)
+  if (length(unique(bin_data$t1_sex)) > 1 
+      # && length(unique(bin_data$t1_site)) > 1
+      ) {
+    
+    # Run the GLM (Linear Model)
+    
+        m_bin <- lm(Vineland_difference ~ PLV_6_9_DK_mean_mean_degree + t1_fsiq + 
+                t1_vabsabcabc_standard + t1_age_years * age_difference + t1_sex 
+                #+ t1_site
+                , 
+                data = bin_data)
+    
+    # Extract stats for the specific predictor
+    stats <- tidy(m_bin) %>% 
+      filter(term == "PLV_6_9_DK_mean_mean_degree")
+    
+    if (nrow(stats) > 0) {
+      results_list[[paste0("idx_", start_idx)]] <- data.frame(
+        n_in_bin = nrow(bin_data),
+        min_age = min(bin_data$age_for_filtering, na.rm = TRUE),
+        max_age = max(bin_data$age_for_filtering, na.rm = TRUE),
+        avg_age = mean(bin_data$age_for_filtering, na.rm = TRUE),
+        beta_estimate = stats$estimate,
+        std_error = stats$std.error,
+        p_value = stats$p.value
+        
+      )
+    }
+  }
+}
+
+# 4. Combine into final dataframe
+rolling_results_idx <- bind_rows(results_list)
+
+rolling_results_idx <- rolling_results_idx %>%
+  mutate(p_FDR = p.adjust(p_value, method = "BH"))
+
+rolling_results_idx <- rolling_results_idx %>%
+  mutate(sig_star = ifelse(p_FDR < 0.05, "*", ""))
+
+#from the rolling results df, remove the second to last row
+rolling_results_idx <- rolling_results_idx[- (nrow(rolling_results_idx) - 1), ]
+
+# View the output
+print(rolling_results_idx)
+```
+
+
+```{r}
+rolling_MD = ggplot(rolling_results_idx, aes(x = avg_age, y = beta_estimate)) +
+  geom_hline(yintercept = 0, linetype = "dashed", size = 1) +
+  geom_line(color = "royalblue", size = 1) +
+  geom_point() +
+  geom_ribbon(aes(ymin = beta_estimate - std_error, 
+                  ymax = beta_estimate + std_error), 
+              alpha = 0.2, fill = "royalblue") +
+  labs(title = "e) Effect size of mean degree on ΔABC score across age",
+       x = "Average Age in Bin",
+       y = "Estimated coefficient - mean degree") +
+  geom_text(aes(label = sig_star, y = 10), 
+            size = 8, 
+            color = "black") +
+  scale_x_continuous(breaks = seq(6, 32, by = 2)) +
+  theme_minimal()+
+    theme(aspect.ratio = 0.6,panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15))
+
+rolling_MD
+```
+
+#Figure 2 grid  
+```{r}
+combined_plot = grid.arrange(
+
+  MD_all, SWI_all, MD_mid, 
+
+  SWI_mid, rolling_MD, rolling_SWI, 
+
+  ncol = 2, nrow = 3
+
+)
+
+combined_plot
+#setwd()
+ggsave("combined_graphs.png", plot = combined_plot, width = 13, height = 13, dpi = 600)
+```
+
+# connectome protocol PLOTS
+```{r}
+vineland_ASD_middle <- Vineland_data_middle
+
+m1 <- lm(Vineland_difference ~ PLV_6_9_DK_mean_mean_degree + t1_vabsabcabc_standard + t1_fsiq +  t1_age_years*age_difference +t1_sex + t1_site, data = vineland_ASD_middle)
+
+#ASD NON ID MIDDLE MD
+MD_15_21 = ggplot(vineland_ASD_middle, aes(y=predict(m1), x= Vineland_difference)) +
+  geom_point() +geom_smooth(method='lm', se = FALSE) +
+  geom_abline(intercept=0, slope=1) +  stat_cor(
+    method          = "pearson",
+    cor.coef.name   = "r",       # lower‐case “r”
+    r.digits        = 2,         # two decimal places for r
+    p.accuracy      = 0.001,     # p < 0.001 for very small p
+    output.type     = "text",    # plain text, not plotmath
+    label.sep       = ", "       # “r = 0.63, p < 0.001”
+  )+
+  labs(x='Actual Values', y='Predicted Values', title='a) Actual vs predicted values of ∆ABC from the model\n containing MD for 15-24-year-old autistic people, n = 38')+ xlim(-40, 30) + ylim(-40, 30)+
+ theme_bw()+ theme(aspect.ratio=1,  plot.title = element_text(size = 10))
+
+
+m2 <- lm(Vineland_difference ~  PLV_6_9_DK_mean_SWI + t1_vabsabcabc_standard + t1_fsiq + t1_age_years*age_difference + t1_sex, data = vineland_ASD_middle)
+
+SWI_15_21 = ggplot(vineland_ASD_middle, aes(x=Vineland_difference, y=  predict(m2))) +
+  geom_point() +geom_smooth(method='lm', se = FALSE) +
+  geom_abline(intercept=0, slope=1) +  stat_cor(
+    method          = "pearson",
+    cor.coef.name   = "r",       # lower‐case “r”
+    r.digits        = 2,         # two decimal places for r
+    p.accuracy      = 0.001,     # p < 0.001 for very small p
+    output.type     = "text",    # plain text, not plotmath
+    label.sep       = ", "       # “r = 0.63, p < 0.001”
+  )+
+  labs(x='Actual Values', y='Predicted Values', title='c) Actual vs predicted values of ∆ABC from the model\n containing SWI for 15-24-year-old autistic people, n = 38')+
+ theme_bw()+ theme(aspect.ratio=1, plot.title = element_text(size = 10))  + xlim(-40, 30) + ylim(-40, 30)
+
+
+
+vineland_ASD <- Vineland_data
+
+m3 <- lm(Vineland_difference ~ (PLV_6_9_DK_mean_SWI) + t1_vabsabcabc_standard +t1_fsiq + t1_age_years*age_difference + t1_site, data = vineland_ASD)
+
+SWI_6_31 = ggplot(vineland_ASD, aes(y=predict(m3), x= Vineland_difference)) +
+  geom_point() +geom_smooth(method='lm', se = FALSE) +
+  geom_abline(intercept=0, slope=1) + 
+  stat_cor(
+    method          = "pearson",
+    cor.coef.name   = "r",       # lower‐case “r”
+    r.digits        = 2,         # two decimal places for r
+    p.accuracy      = 0.001,     # p < 0.001 for very small p
+    output.type     = "text",    # plain text, not plotmath
+    label.sep       = ", "       # “r = 0.63, p < 0.001”
+  )+
+  labs(x='Actual Values', y='Predicted Values', title='b) Actual vs predicted values of ∆ABC from the model\n containing SWI for 6-31-year-old autistic people, n = 81') + theme_bw() + theme(aspect.ratio=1, plot.title = element_text(size = 10)) + xlim(-40, 30) + ylim(-40, 30)                      
+    
+
+connectome_grid = ggpubr::ggarrange(MD_15_21, SWI_6_31, SWI_15_21,
+            ncol = 2, nrow = 2)
+
+#setwd()
+
+ggsave(filename = "connectome_grid_figure.png", 
+       plot = connectome_grid, 
+       width = 12,      # Width in inches
+       height = 12,      # Height in inches
+       dpi = 300,       # 300 DPI is standard for publication-quality images
+       bg = "white")    # Ensures the background is white, not transparent
+
+connectome
+
+```
+
+#p values doubleres with IQ - 12/6/2026 - SWI ALL AGES
+```{r}
+# 1. Isolate the data and drop NAs 
+# CRITICAL: If we don't drop NAs first, model.matrix will silently drop them, 
+# but our 'y' vector won't, causing a length mismatch error later!
+clean_data <- Vineland_data %>%
+  select(Vineland_difference, PLV_6_9_DK_mean_SWI, t1_fsiq, 
+         t1_vabsabcabc_standard, t1_age_years, age_difference, t1_site) %>%
+  drop_na()
+
+# 2. Define the outcome variable (y)
+y <- clean_data$Vineland_difference
+
+# 3. Create the numeric predictor matrix
+# The '- 1' at the end tells R not to create an intercept column, 
+# as double residualization typically handles centering natively.
+X_matrix <- model.matrix(
+  ~ PLV_6_9_DK_mean_SWI + t1_fsiq + t1_vabsabcabc_standard + 
+    t1_age_years * age_difference + t1_site - 1, 
+  data = clean_data
+)
+
+# Convert back to a standard dataframe for the doubleres function
+X_df <- as.data.frame(X_matrix)
+
+# 4. Run the Double Residualization
+set.seed(150)
+swi_model_result <- doubleres(y, X_df, nperm = 9999, nfolds = 5)
+
+# View results
+swi_model_result
+
+```
+
+#p values doubleres with IQ - 12/6/2026 - MD ALL AGES
+```{r}
+
+# 1. Isolate the necessary columns and drop NAs
+# Note: I used 't1_age' instead of 't1_age_years' based on your formula
+clean_data <- Vineland_data %>%
+  select(Vineland_difference, PLV_6_9_DK_mean_mean_degree, t1_vabsabcabc_standard, 
+         t1_fsiq, t1_age, age_difference, t1_site) %>%
+  drop_na()
+
+# 2. Define the outcome variable (y)
+y <- clean_data$Vineland_difference
+
+# 3. Create the numeric predictor matrix
+# model.matrix automatically calculates the interaction and dummy codes the sites.
+# The '- 1' removes the intercept column.
+X_matrix <- model.matrix(
+  ~ PLV_6_9_DK_mean_mean_degree + t1_vabsabcabc_standard + t1_fsiq + 
+    t1_age * age_difference + t1_site - 1, 
+  data = clean_data
+)
+
+# Convert the matrix back into a standard dataframe format for doubleres
+X_df <- as.data.frame(X_matrix)
+
+# 4. Run the Double Residualization
+set.seed(150)
+mean_degree_result <- doubleres(y, X_df, nperm = 9999, nfolds = 5)
+
+# View results
+mean_degree_result
+```
+
+#p values doubleres with IQ - 12/6/2026 - SWI YOUTH
+```{r}
+
+# 1. Isolate the data and drop NAs 
+clean_data <- Vineland_data_middle %>%
+  select(Vineland_difference, PLV_6_9_DK_mean_SWI, t1_fsiq, 
+         t1_vabsabcabc_standard, t1_age_years, age_difference, t1_sex) %>%
+  drop_na()
+
+# 2. Define the outcome variable (y)
+y <- clean_data$Vineland_difference
+
+# 3. Create the numeric predictor matrix
+# model.matrix handles the interaction and dummy codes t1_sex
+# The '- 1' removes the intercept
+X_matrix <- model.matrix(
+  ~ PLV_6_9_DK_mean_SWI + t1_fsiq + t1_vabsabcabc_standard + 
+    t1_age_years * age_difference + t1_sex - 1, 
+  data = clean_data
+)
+
+# Convert to standard dataframe
+X_df <- as.data.frame(X_matrix)
+
+# 4. Run the Double Residualization
+set.seed(150)
+swi_middle_result <- doubleres(y, X_df, nperm = 9999, nfolds = 5)
+
+# 5. Extract the results
+# Print the full result to the console to see the summary
+print(swi_middle_result)
+```
+
+#p values doubleres IQ, MD middle
+```{r}
+# 1. Isolate the data and drop NAs 
+clean_data <- Vineland_data_middle %>%
+  select(Vineland_difference, PLV_6_9_DK_mean_mean_degree, t1_fsiq, 
+         t1_vabsabcabc_standard, t1_age, age_difference, t1_sex, t1_site) %>%
+  drop_na()
+
+# 2. Define the outcome variable (y)
+y <- clean_data$Vineland_difference
+
+# 3. Create the numeric predictor matrix
+# model.matrix handles the interaction and dummy codes both t1_sex and t1_site
+# The '- 1' removes the intercept
+X_matrix <- model.matrix(
+  ~ PLV_6_9_DK_mean_mean_degree + t1_fsiq + t1_vabsabcabc_standard + 
+    t1_age * age_difference + t1_sex + t1_site - 1, 
+  data = clean_data
+)
+
+# Convert to standard dataframe format for doubleres
+X_df <- as.data.frame(X_matrix)
+
+# 4. Run the Double Residualization
+set.seed(150)
+mean_degree_middle_result <- doubleres(y, X_df, nperm = 9999, nfolds = 5)
+
+# 5. View the results
+print(mean_degree_middle_result)
+```
+
+#10 fold cross validation for paper
+```{r}
+train.control<- trainControl(method="cv", number = 10)
+
+#6-31 SWI
+model <- train(Vineland_difference ~ PLV_6_9_DK_mean_SWI + t1_vabsabcabc_standard +  t1_fsiq  + t1_age_years*age_difference + t1_site, data = Vineland_data, method = "lm", trControl = train.control)
+print(model)
+
+#SWI 15-24
+model <- train(Vineland_difference ~ t1_sex + t1_fsiq + PLV_6_9_DK_mean_SWI + t1_vabsabcabc_standard + t1_age_years*age_difference, data = Vineland_data_middle, method = "lm", trControl = train.control)
+print(model)
+
+#MD 15-24
+model <- train(Vineland_difference ~ t1_vabsabcabc_standard +  t1_fsiq + PLV_6_9_DK_mean_mean_degree + t1_age_years*age_difference + t1_site + t1_sex, data = Vineland_data_middle, method = "lm", trControl = train.control)
+print(model)
+
+```
+
+#levene's test for variance
+```{r}
+variance_data_set = filter(Vineland_data, AgeBin != '22-31')
+levene_test(variance_data_set, Vineland_difference ~ AgeBin)
+levene_test(variance_data_set, PLV_6_9_DK_mean_SWI ~ AgeBin)
+levene_test(variance_data_set, PLV_6_9_DK_mean_mean_degree ~ AgeBin)
+```
+
+
+#LEAVE ONE OUT CROSS VALIDATION - MEAN DEGREE, VINELAND MIDDLE - WITH PERMUTATION TEST
+```{r}
+
+categorize_change <- function(x) {
+  if (x >= 6) {
+    return("increase")
+  } else if (x <= -6) {
+    return("decrease")
+  } else {
+    return("no_change")
+  }
+}
+
+# Initialize
+n <- nrow(Vineland_data_middle)
+actual_category <- character(n)
+predicted_category <- character(n)
+
+# Loop through each participant for LOOCV
+for (i in 1:n) {
+  # Training data (leave one out)
+  train_data <- Vineland_data_middle[-i, ]
+  test_data <- Vineland_data_middle[i, ]
+  
+  # Fit model
+  model_loocv <- lm(Vineland_difference ~ PLV_6_9_DK_mean_mean_degree + 
+                    t1_fsiq + t1_vabsabcabc_standard + t1_age*age_difference + 
+                    t1_sex + t1_site, data = train_data)
+  
+  # Predict on left-out sample
+  predicted_value <- predict(model_loocv, newdata = test_data)
+  
+  # Store categorized actual and predicted values
+  actual_category[i] <- categorize_change(test_data$Vineland_difference)
+  predicted_category[i] <- categorize_change(predicted_value)
+}
+
+# Accuracy
+correct <- actual_category == predicted_category
+overall_accuracy <- mean(correct)
+cat("LOOCV category prediction accuracy:", round(overall_accuracy * 100, 2), "%\n")
+
+# Confusion matrix
+print(table(Actual = actual_category, Predicted = predicted_category))
+
+# Permutation test
+n_permutations <- 1000
+permuted_accuracies <- numeric(n_permutations) #vector of 1000 0s
+
+for (p in 1:n_permutations) {
+  permuted_actual <- sample(actual_category)  # Shuffle labels
+  permuted_correct <- permuted_actual == predicted_category
+  permuted_accuracies[p] <- mean(permuted_correct)
+}
+
+# Step 6: Compute p-value (one-sided: observed > permuted)
+p_value <- mean(permuted_accuracies >= overall_accuracy) #you can't have a negative percentage
+cat("Permutation test p-value:", p_value, "\n")
+
+# Optional: histogram of null distribution
+hist(permuted_accuracies, breaks = 30, main = "Permutation Null Distribution",
+     xlab = "Accuracy", xlim = c(0, 1))
+abline(v = overall_accuracy, col = "red", lwd = 2)
+
+```
+
+#LEAVE ONE OUT CROSS VALIDATION - SWI, VINELAND MIDDLE
+```{r}
+
+categorize_change <- function(x) {
+  if (x >= 6) {
+    return("increase")
+  } else if (x <= -6) {
+    return("decrease")
+  } else {
+    return("no_change")
+  }
+}
+
+# Initialize
+n <- nrow(Vineland_data_middle)
+actual_category <- character(n)
+predicted_category <- character(n)
+
+# Loop through each participant for LOOCV
+for (i in 1:n) {
+  # Training data (leave one out)
+  train_data <- Vineland_data_middle[-i, ]
+  test_data <- Vineland_data_middle[i, ]
+  
+  # Fit model
+  model_loocv <- lm(Vineland_difference ~ PLV_6_9_DK_mean_SWI + 
+                    t1_fsiq + t1_vabsabcabc_standard + t1_age*age_difference + 
+                    t1_sex, data = train_data)
+  
+  # Predict on left-out sample
+  predicted_value <- predict(model_loocv, newdata = test_data)
+  
+  # Store categorized actual and predicted values
+  actual_category[i] <- categorize_change(test_data$Vineland_difference)
+  predicted_category[i] <- categorize_change(predicted_value)
+}
+
+# Accuracy
+correct <- actual_category == predicted_category
+overall_accuracy <- mean(correct)
+cat("LOOCV category prediction accuracy:", round(overall_accuracy * 100, 2), "%\n")
+
+# Confusion matrix
+print(table(Actual = actual_category, Predicted = predicted_category))
+
+# Permutation test
+n_permutations <- 1000
+permuted_accuracies <- numeric(n_permutations) #vector of 1000 0s
+
+for (p in 1:n_permutations) {
+  permuted_actual <- sample(actual_category)  # Shuffle labels
+  permuted_correct <- permuted_actual == predicted_category
+  permuted_accuracies[p] <- mean(permuted_correct)
+}
+
+# Step 6: Compute p-value (one-sided: observed > permuted)
+p_value <- mean(permuted_accuracies >= overall_accuracy) #you can't have a negative percentage
+cat("Permutation test p-value:", p_value, "\n")
+
+
+```
+
+
+#AUC INCREASES VS NON INCREASES IN THE FUNCTION - MIDDLE MEAN DEGREE
+```{r}
+n <- nrow(Vineland_data_middle)
+actual_category <- character(n)
+predicted_category <- character(n)
+predicted_value_all <- numeric(n)  # Store raw predicted values for ROC
+
+# Step 1: Categorization function
+categorize_change <- function(x) {
+  if (x >= 6) {
+    return("increase")
+  } else {
+    return("no_increase")
+  }
+}
+
+# Step 2: LOOCV
+for (i in 1:n) {
+  train_data <- Vineland_data_middle[-i, ]
+  test_data <- Vineland_data_middle[i, ]
+  
+  model_loocv <- lm(Vineland_difference ~ PLV_6_9_DK_mean_mean_degree + 
+                    t1_fsiq + t1_vabsabcabc_standard + t1_age*age_difference + 
+                    t1_sex + t1_site, data = train_data)
+  
+  predicted_value <- predict(model_loocv, newdata = test_data)
+  
+  predicted_value_all[i] <- predicted_value
+  actual_category[i] <- categorize_change(test_data$Vineland_difference)
+  predicted_category[i] <- categorize_change(predicted_value)
+}
+
+# Step 3: Subset to increase vs decrease
+valid_idx <- which(actual_category %in% c("increase", "no_increase")) 
+actual_bin <- ifelse(actual_category[valid_idx] == "increase", 1, 0) #Converts the actual category labels into binary numeric form:"increase" → 1, "decrease" → 0
+predicted_bin <- ifelse(predicted_category[valid_idx] == "increase", 1, 0)  
+predicted_scores <- predicted_value_all[valid_idx]
+
+# Step 4: AUC using raw predicted values
+roc_obj <- roc(actual_bin, predicted_scores)
+auc_value <- pROC::auc(roc_obj)
+
+# Step 5: Sensitivity and Specificity
+conf_mat <- table(Predicted = predicted_bin, Actual = actual_bin)
+
+TP <- conf_mat["1", "1"]
+TN <- conf_mat["0", "0"]
+FP <- conf_mat["1", "0"]
+FN <- conf_mat["0", "1"]
+
+sensitivity <- TP / (TP + FN)
+specificity <- TN / (TN + FP)
+
+# Step 6: Output results
+cat("AUC:", round(auc_value, 3), "\n")
+cat("Sensitivity (recall for 'increase'):", round(sensitivity, 3), "\n")
+cat("Specificity (recall for 'no_increase'):", round(specificity, 3), "\n")
+
+# Compute 95% CI for AUC (using bootstrapping by default)
+auc_ci <- ci.auc(roc_obj)
+print(auc_ci)
+
+plot(roc_obj,
+     col = "#1c61b6",        # Curve color
+     lwd = 2,                # Line width
+     main = "ROC Curve: Increasing vs not-increasing adaptive function (n = 38)",
+     print.auc = TRUE,       # Display AUC on the plot
+     print.auc.cex = 1.2,    # Font size of AUC
+     legacy.axes = TRUE,     # Optional: TPR on Y-axis, FPR on X-axis
+     xlab = "False Positive Rate (1 - Specificity)",
+     ylab = "True Positive Rate (Sensitivity)")
+
+
+
+```
+
+#AUC SWI MIDDLE 
+```{r}
+Vineland_middle = Vineland_data_middle
+
+n <- nrow(Vineland_middle)
+actual_category <- character(n)
+predicted_category <- character(n)
+predicted_value_all <- numeric(n)  # Store raw predicted values for ROC
+
+# Step 1: Categorization function
+categorize_change <- function(x) {
+  if (x >= 6) {
+    return("increase")
+  } else {
+    return("no_increase")
+  }
+}
+
+# Step 2: LOOCV
+for (i in 1:n) {
+  train_data <- Vineland_middle[-i, ]
+  test_data <- Vineland_middle[i, ]
+  
+  model_loocv <- lm(Vineland_difference ~ scale(PLV_6_9_DK_mean_SWI) + 
+                    t1_fsiq + t1_vabsabcabc_standard + t1_age*age_difference + 
+                    t1_sex, data = train_data)
+  
+  predicted_value <- predict(model_loocv, newdata = test_data)
+  
+  predicted_value_all[i] <- predicted_value
+  actual_category[i] <- categorize_change(test_data$Vineland_difference)
+  predicted_category[i] <- categorize_change(predicted_value)
+}
+
+# Step 3: Subset to increase vs decrease
+actual_bin <- ifelse(actual_category == "increase", 1, 0)
+predicted_bin <- ifelse(predicted_category == "increase", 1, 0)
+predicted_scores <- predicted_value_all  # continuous scores
+
+# Step 4: AUC using raw predicted values
+roc_obj <- roc(actual_bin, predicted_scores)
+auc_value <- pROC::auc(roc_obj)
+
+# Step 5: Sensitivity and Specificity
+conf_mat <- table(Predicted = predicted_bin, Actual = actual_bin)
+
+TP <- conf_mat["1", "1"]
+TN <- conf_mat["0", "0"]
+FP <- conf_mat["1", "0"]
+FN <- conf_mat["0", "1"]
+
+sensitivity <- TP / (TP + FN)
+specificity <- TN / (TN + FP)
+
+# Step 6: Output results
+cat("AUC:", round(auc_value, 3), "\n")
+cat("Sensitivity (recall for 'increase'):", round(sensitivity, 3), "\n")
+cat("Specificity (recall for 'no_increase'):", round(specificity, 3), "\n")
+
+plot(roc_obj,
+     col = "#1c61b6",        # Curve color
+     lwd = 2,                # Line width
+     main = "ROC Curve: Increased Vineland Score",
+     print.auc = TRUE,       # Display AUC on the plot
+     print.auc.cex = 1.2,    # Font size of AUC
+     legacy.axes = TRUE,     # Optional: TPR on Y-axis, FPR on X-axis
+     xlab = "False Positive Rate (1 - Specificity)",
+     ylab = "True Positive Rate (Sensitivity)")
+
+# Optional: add diagonal reference line
+abline(a = 0, b = 1, lty = 2, col = "gray")
+
+# Compute 95% CI for AUC (using bootstrapping by default)
+auc_ci <- ci.auc(roc_obj)
+print(auc_ci)
+
+
+```
+
+#COMBINED ROC MD SWI MIDDLE
+```{r}
+Vineland_middle <- Vineland_data_middle
+n <- nrow(Vineland_middle)
+
+# Initialize storage for both models
+actual_category <- character(n)
+pred_swi_all <- numeric(n)
+pred_degree_all <- numeric(n)
+
+# Step 1: Categorization function
+categorize_change <- function(x) {
+  if (x >= 6) {
+    return("increase")
+  } else {
+    return("no_increase")
+  }
+}
+
+# Step 2: Single LOOCV Loop for BOTH models
+for (i in 1:n) {
+  train_data <- Vineland_middle[-i, ]
+  test_data <- Vineland_middle[i, ]
+  
+  # Model 1: SWI
+  model_swi <- lm(Vineland_difference ~ scale(PLV_6_9_DK_mean_SWI) + 
+                    t1_fsiq + t1_vabsabcabc_standard + t1_age*age_difference + 
+                    t1_sex, data = train_data)
+  
+  # Model 2: Mean Degree
+  model_degree <- lm(Vineland_difference ~ PLV_6_9_DK_mean_mean_degree + 
+                       t1_fsiq + t1_vabsabcabc_standard + t1_age*age_difference + 
+                       t1_sex + t1_site, data = train_data)
+  
+  # Store predictions
+  pred_swi_all[i] <- predict(model_swi, newdata = test_data)
+  pred_degree_all[i] <- predict(model_degree, newdata = test_data)
+  actual_category[i] <- categorize_change(test_data$Vineland_difference)
+}
+
+# Step 3: Define binary outcomes
+actual_bin <- ifelse(actual_category == "increase", 1, 0)
+
+# Step 4: Generate ROC objects
+roc_swi <- roc(actual_bin, pred_swi_all, quiet = TRUE)
+roc_degree <- roc(actual_bin, pred_degree_all, quiet = TRUE)
+
+# Step 5: Extract Coordinates for Threshold = 6
+# This finds the exact Sensitivity and Specificity when the prediction cutoff is exactly 6
+coords_swi <- coords(roc_swi, x = 6, input = "threshold", ret = c("specificity", "sensitivity"))
+coords_degree <- coords(roc_degree, x = 6, input = "threshold", ret = c("specificity", "sensitivity"))
+
+# Step 6: Plotting
+# Force a 1:1 square aspect ratio for the plot region
+roc_plot_middle <- function() {
+par(pty = "s") 
+
+# Plot the primary model (Mean Degree)
+plot(roc_degree,
+     col = "#d95f02",        
+     lwd = 2,                # Line width
+     lty = 1, 
+     main = "Increased vs not-increased adaptive \n function in 15-24-year-olds (n = 38)",
+     legacy.axes = TRUE,     # TPR on Y-axis, FPR on X-axis (labels 0 to 1)
+     xlab = "False Positive Rate (1 - Specificity)",
+     ylab = "True Positive Rate (Sensitivity)",
+     cex.lab = 1.4,          # Scales axis label font size up (approx 14pt)
+     identity = TRUE,        # Let pROC draw the chance line automatically (fixes the flip)
+     identity.lty = 3,       
+     identity.col = "gray50",
+     identity.lwd = 1.5)
+
+# Add the second model (SWI) to the same plot
+plot(roc_swi, 
+     col = "#1c61b6"    ,    
+     lwd = 2, 
+     add = TRUE)             # Add to existing plot
+
+# Add points marking the threshold = 6
+# Because pROC's internal X-axis is Specificity (even with legacy.axes=TRUE), 
+# we use the raw specificity value for the X coordinate so it plots in the right place.
+points(x = coords_degree$specificity, y = coords_degree$sensitivity, 
+       pch = 19, col = "#d95f02", cex = 1.5)
+points(x = coords_swi$specificity, y = coords_swi$sensitivity, 
+       pch = 19, col = "#1c61b6", cex = 1.5)
+
+# Create legend labels with explicit pROC namespace and numeric coercion
+auc_degree_label <- paste0("MD Model (AUC = ", round(as.numeric(pROC::auc(roc_degree)), 2), ")")
+auc_swi_label <- paste0("SWI Model (AUC = ", round(as.numeric(pROC::auc(roc_swi)), 2), ")")
+
+# Add the legend to the bottom right
+legend("bottomright", 
+       legend = c(auc_degree_label, auc_swi_label, "Threshold Cut-off = 6"),
+       col = c("#d95f02", "#1c61b6","black", "gray50"),
+       lwd = c(2, 2, NA, 1.5),
+       lty = c(1, 1, NA, 3),
+       pch = c(NA, NA, 19, NA), 
+       bty = "n",               # Removes the box around the legend
+       cex = 1)               # Slightly scales down text to fit nicely
+
+}
+
+roc_plot_middle()
+
+```
+
+
+#AUC VINELAND ALL - increase vs not
+```{r}
+n <- nrow(Vineland_data)
+actual_category <- character(n)
+predicted_category <- character(n)
+predicted_value_all <- numeric(n)  # Store raw predicted values for ROC
+
+# Step 1: Categorization function
+categorize_change <- function(x) {
+  if (x >= 6) {
+    return("increase")
+  } else {
+    return("no_increase")
+  }
+}
+
+# Step 2: LOOCV
+for (i in 1:n) {
+  train_data <- Vineland_data[-i, ]
+  test_data <- Vineland_data[i, ]
+  
+  model_loocv <- lm(Vineland_difference ~ scale(PLV_6_9_DK_mean_SWI) + 
+                      t1_fsiq + t1_vabsabcabc_standard + t1_age*age_difference + 
+                      t1_site, data = train_data)
+  
+  predicted_value <- predict(model_loocv, newdata = test_data)
+  
+  predicted_value_all[i] <- predicted_value
+  actual_category[i] <- categorize_change(test_data$Vineland_difference)
+  predicted_category[i] <- categorize_change(predicted_value)
+}
+
+# Step 3: Subset to increase vs decrease
+actual_bin <- ifelse(actual_category == "increase", 1, 0)
+predicted_bin <- ifelse(predicted_category == "increase", 1, 0)
+predicted_scores <- predicted_value_all  # continuous scores
+
+# Step 4: ROC and AUC calculation
+roc_obj <- roc(actual_bin, predicted_scores, quiet = TRUE)
+auc_value <- pROC::auc(roc_obj)
+
+# Extract coordinates for the specific threshold of 6
+coords_swi_all <- coords(roc_obj, x = 6, input = "threshold", ret = c("specificity", "sensitivity"))
+
+# Step 5: Sensitivity and Specificity Check
+conf_mat <- table(Predicted = predicted_bin, Actual = actual_bin)
+
+TP <- conf_mat["1", "1"]
+TN <- conf_mat["0", "0"]
+FP <- conf_mat["1", "0"]
+FN <- conf_mat["0", "1"]
+
+sensitivity <- TP / (TP + FN)
+specificity <- TN / (TN + FP)
+
+cat("AUC:", round(auc_value, 3), "\n")
+cat("Sensitivity (recall for 'increase'):", round(sensitivity, 3), "\n")
+cat("Specificity (recall for 'no_increase'):", round(specificity, 3), "\n")
+
+
+# ==========================================
+# Step 6: Plotting Function
+# ==========================================
+draw_roc_plot_81 <- function() {
+  # Force a 1:1 square aspect ratio
+  par(pty = "s") 
+  
+  # Plot the ROC curve
+  plot(roc_obj,
+       col = "#1c61b6",        # Blue curve color
+       lwd = 2,                # Line width
+       main = "Increased vs not-increased adaptive \n function in 6-31-year-olds (n = 81)",
+       legacy.axes = TRUE,     # TPR on Y-axis, FPR on X-axis (0 to 1)
+       xlab = "False Positive Rate (1 - Specificity)",
+       ylab = "True Positive Rate (Sensitivity)",
+       cex.lab = 1.4,          # Scales axis label font size up (approx 14pt)
+       identity = TRUE,        # Let pROC draw the chance line automatically
+       identity.lty = 3,       
+       identity.col = "gray50",
+       identity.lwd = 1.5)
+  
+  # Add point marking the threshold = 6
+  points(x = coords_swi_all$specificity, y = coords_swi_all$sensitivity, 
+         pch = 19, col = "#1c61b6", cex = 1.5)
+  
+  # Create legend label safely
+  auc_label <- paste0("SWI Model (AUC = ", round(as.numeric(pROC::auc(roc_obj)), 2), ")")
+  
+  # Add the legend to the bottom right
+  legend("bottomright", 
+         legend = c(auc_label, "Threshold Cut-off = 6"),
+         col = c("#1c61b6", "black", "gray50"),
+         lwd = c(2, NA, 1.5),
+         lty = c(1, NA, 3),
+         pch = c(NA, 19, NA), 
+         bty = "n",               
+         cex = 1)               
+}
+
+# Call the function to display the plot
+draw_roc_plot_81()
+```
+
+```{r}
+final_grid <- plot_grid(~roc_plot_middle(), ~draw_roc_plot_81(), labels = c("b)", "c)"))
+
+print(final_grid)
+
+#setwd()
+
+ggsave(filename = "ROC_grid_figure.png", 
+       plot = final_grid, 
+       width = 12,      # Width in inches
+       height = 6,      # Height in inches
+       dpi = 300,       # 300 DPI is standard for publication-quality images
+       bg = "white")    # Ensures the background is white, not transparent
+```
+
+
+#GRAPHS FOR PAPER - 21/3/24 - AGE VS GRAPH THEORY - group differences
+```{r}
+
+PLV_6_9_DK_mean_mean_degree_resid <- resid(lm(PLV_6_9_DK_mean_mean_degree ~ t1_age_years + I(t1_age_years^2) + t1_site + t1_sex, data = young))
+
+#YOUNG MD
+number_matricies <- ggplot(young, aes(x = ASD_TDC, y = PLV_6_9_DK_mean_mean_degree_resid, color = ASD_TDC))+
+  geom_jitter()+ geom_boxplot(alpha = 0.5)+
+  scale_color_manual(values=c("#0086EA","orange"))+
+    stat_compare_means(method = "t.test")+
+  labs(x="", y = "Mean degree (residual)", col = "Group", shape = "Group") +
+  theme(panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15))
+number_matricies
+
+#MD middle
+PLV_6_9_DK_mean_md_resid <- resid(lm(PLV_6_9_DK_mean_mean_degree ~ t1_age_years + t1_sex + t1_site, data = middle))
+
+number_matricies <- ggplot(middle, aes(x = ASD_TDC, y = PLV_6_9_DK_mean_md_resid, color = ASD_TDC))+
+  geom_jitter()+ geom_boxplot(alpha = 0.5)+
+  scale_color_manual(values=c("#0086EA","orange"))+
+  stat_compare_means(method = "t.test")+
+  labs(x="", y = "Mean degree (residual)", col = "Group", shape = "Group") +
+  theme(panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15))
+number_matricies
+
+#MD OLD
+PLV_6_9_DK_mean_mean_degree_resid <- resid(lm(PLV_6_9_DK_mean_mean_degree ~ t1_age_years + I(t1_age_years^2) + t1_site, data = old))
+
+number_matricies <- ggplot(old, aes(x = ASD_TDC, y = PLV_6_9_DK_mean_mean_degree_resid, color = ASD_TDC))+
+  geom_jitter()+ geom_boxplot(alpha = 0.5)+
+  scale_color_manual(values=c("#0086EA","orange"))+
+  stat_compare_means(method = "t.test")+
+  labs(x="", y = "Mean degree (residual)", col = "Group", shape = "Group") +
+  theme(panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15))
+number_matricies
+
+#YOUNG SWI
+PLV_6_9_DK_mean_SWI_resid <- resid(lm(PLV_6_9_DK_mean_SWI ~ t1_age_years + I(t1_age_years^2) + t1_site, data = young))
+
+number_matricies <- ggplot(young, aes(x = ASD_TDC, y = PLV_6_9_DK_mean_SWI_resid, color = ASD_TDC))+
+  geom_jitter()+ geom_boxplot(alpha = 0.5)+
+  scale_color_manual(values=c("#0086EA","orange"))+
+  stat_compare_means(method = "t.test")+
+  labs(x="", y = "Small world index (residual)", col = "Group", shape = "Group") +
+  theme(panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15))
+number_matricies
+
+# MIDDLE SWI
+PLV_6_9_DK_mean_SWI_resid <- resid(lm(PLV_6_9_DK_mean_SWI ~ t1_age_years + t1_site  + t1_sex , data = middle))
+
+number_matricies <- ggplot(middle, aes(x = ASD_TDC, y = PLV_6_9_DK_mean_SWI_resid, color = ASD_TDC))+
+  geom_jitter()+ geom_boxplot(alpha = 0.5)+
+  scale_color_manual(values=c("#0086EA","orange"))+
+  stat_compare_means(method = "t.test")+
+  labs(x="", y = "Small world index (residual)", col = "Group", shape = "Group") +
+  theme(panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15))
+number_matricies
+
+#SWI OLD
+number_matricies <- ggplot(old, aes(x = ASD_TDC, y = PLV_6_9_DK_mean_SWI, color = ASD_TDC))+
+  geom_jitter()+ geom_boxplot(alpha = 0.5)+
+  scale_color_manual(values=c("#0086EA","orange"))+
+  stat_compare_means(method = "t.test")+
+  labs(x="", y = "Small world index", col = "Group", shape = "Group") +
+  theme(panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15))
+number_matricies
+
+
+```
+
+#co-occurring conditions by age
+```{r}
+b_nonID <- b_nonID %>%
+  mutate(
+    ADHD = case_when(
+      (Proband_ADHD_Inattention %in% 2 | Proband_ADHD_Hyperactive %in% 2 | Proband_ADHD_Impulsive %in% 2) | 
+         (`t1_Do you have any of the following:(Attention deficit hyperactivity disorder (ADHD))` %in% "Y" & (!(Proband_ADHD_Inattention %in% c(0, 1)) & !(Proband_ADHD_Hyperactive %in% c(0, 1)) & !(Proband_ADHD_Impulsive %in% c(0, 1))))
+      ~ "Y",
+      
+       (Proband_ADHD_Inattention %in% c(0, 1) & Proband_ADHD_Hyperactive %in% c(0, 1) & Proband_ADHD_Impulsive %in% c(0, 1)) |
+         (`t1_Do you have any of the following:(Attention deficit hyperactivity disorder (ADHD))` %in% c("N", "NK") &  !(Proband_ADHD_Inattention %in% 2 | Proband_ADHD_Hyperactive %in% 2 | Proband_ADHD_Impulsive %in% 2))
+      
+         ~ "N",
+      
+      # -------------------------------------------------------------------
+      # RULE 3: Else = Missing
+      # -------------------------------------------------------------------
+      # If a row doesn't meet the "Y" or "N" conditions above, make it NA
+      TRUE ~ NA_character_
+    ),
+      
+    
+    
+    Dyspraxia = ifelse(Proband_Dyspraxia == 2, "Y", "N"),
+    
+    DyslexiaDyscalculia = ifelse(Proband_SLP_DyslexiaDyscalculia == 2, "Y", "N"),
+    
+    GDD = ifelse(Proband_ID_GDD == 2, "Y", "N"),
+    
+    OCD = case_when(
+      # -------------------------------------------------------------------
+      # RULE 1: OCD = Y
+      # -------------------------------------------------------------------
+      Proband_OCD %in% 2 | 
+        (`t1_Do you have any of the following:(Obsessive compulsive disorder)` %in% "Y" & !(Proband_OCD %in% c(0, 1))) 
+      ~ "Y",
+      
+      # -------------------------------------------------------------------
+      # RULE 2: OCD = N
+      # -------------------------------------------------------------------
+      Proband_OCD %in% c(0, 1) | 
+        (`t1_Do you have any of the following:(Obsessive compulsive disorder)` %in% c("N", "NK") & !(Proband_OCD %in% 2)) 
+      ~ "N",
+      
+      # -------------------------------------------------------------------
+      # RULE 3: Else = Missing
+      # -------------------------------------------------------------------
+      # If a row doesn't meet the "Y" or "N" conditions above, make it NA
+      TRUE ~ NA_character_
+    ),
+    
+    # OCD = ifelse(
+    #   Proband_OCD == 2 |
+    #     `t1_Do you have any of the following:(Obsessive compulsive disorder)` == "Y" & is.na(Proband_OCD), 
+    #   "Y", "N"),
+    
+    Anxiety = case_when(
+  # -------------------------------------------------------------------
+  # RULE 1: Anxiety = Y
+  # -------------------------------------------------------------------
+  Proband_Anxiety %in% 2 | 
+  (`t1_Do you have any of the following:(Anxiety disorder)` %in% "Y" & !(Proband_Anxiety %in% c(0, 1))) 
+  ~ "Y",
+  
+  # -------------------------------------------------------------------
+  # RULE 2: Anxiety = N
+  # -------------------------------------------------------------------
+  Proband_Anxiety %in% c(0, 1) | 
+  (`t1_Do you have any of the following:(Anxiety disorder)` %in% c("N", "NK") & !(Proband_Anxiety %in% 2)) 
+  ~ "N",
+  
+  # -------------------------------------------------------------------
+  # RULE 3: Else = Missing
+  # -------------------------------------------------------------------
+  # If a row doesn't meet the "Y" or "N" conditions above, make it NA
+  TRUE ~ NA_character_
+),
+
+    
+Depression = case_when(
+  # -------------------------------------------------------------------
+  # RULE 1: Depression = Y
+  # -------------------------------------------------------------------
+  Proband_Depression %in% 2 | 
+  (`t1_Do you have any of the following:(Depression)` %in% "Y" & !(Proband_Depression %in% c(0, 1))) 
+  ~ "Y",
+  
+  # -------------------------------------------------------------------
+  # RULE 2: Depression = N
+  # -------------------------------------------------------------------
+  Proband_Depression %in% c(0, 1) | 
+  (`t1_Do you have any of the following:(Depression)` %in% c("N", "NK") & !(Proband_Depression %in% 2)) 
+  ~ "N",
+  
+  # -------------------------------------------------------------------
+  # RULE 3: Else = Missing
+  # -------------------------------------------------------------------
+  # If a row doesn't meet the "Y" or "N" conditions above, make it NA
+  TRUE ~ NA_character_
+)
+
+  )
+
+
+# 1. Define the base dataset
+summary_table <- b_nonID %>%
+  select(AgeBin, ASD_TDC, t1_sex, t1_fsiq, ADHD, Dyspraxia, 
+         DyslexiaDyscalculia, GDD, OCD, Anxiety, Depression, 
+         t1_srs_tscore_parent)
+
+summary_table$Dyspraxia = factor(summary_table$Dyspraxia, levels = c("N", "Y"))
+summary_table$GDD = factor(summary_table$GDD, levels = c("N", "Y"))
+
+my_controls <- tableby.control(
+  cat.stats = "countN", # Changes output to "Count / Total" format (e.g., 2/3)
+  cat.simplify = TRUE    # Drops the redundant first level for binary variables
+)
+
+# 3. Create the tables using the control argument
+tab_6_15 <- tableby(ASD_TDC ~ . - AgeBin, 
+                    data = filter(summary_table, AgeBin == "6-15"),control = my_controls)
+df_6_15 <- as.data.frame(summary(tab_6_15, text = TRUE))
+
+tab_15_22 <- tableby(ASD_TDC ~ . - AgeBin, 
+                     data = filter(summary_table, AgeBin == "15-22"),control = my_controls)
+df_15_22 <- as.data.frame(summary(tab_15_22, text = TRUE))
+
+tab_22_31 <- tableby(ASD_TDC ~ . - AgeBin, 
+                     data = filter(summary_table, AgeBin == "22-31"),control = my_controls)
+
+df_22_31 <- as.data.frame(summary(tab_22_31, text = TRUE))
+
+# 4. Standardize the first column name so we can join on it
+colnames(df_6_15)[1] <- "Variable"
+colnames(df_15_22)[1] <- "Variable"
+colnames(df_22_31)[1] <- "Variable"
+
+# 5. get rid of N miss
+df_6_15 <- df_6_15 %>%  filter(!str_detect(Variable, "^-\\s*N-Miss"))
+
+df_15_22 <- df_15_22 %>% filter(!str_detect(Variable, "^-\\s*N-Miss"))
+
+df_22_31 <- df_22_31 %>% filter(!str_detect(Variable, "^-\\s*N-Miss"))
+
+#bind them
+all_ages = cbind(df_6_15, df_15_22, df_22_31)
+
+# 7. Export
+#setwd("")
+write.csv(all_ages, "Demographics_Summary_Robust_short.csv", row.names = FALSE)
+
+
+```
+
+#mean follow up interval
+```{r}
+
+summary_table <- Vineland_data %>%
+  select(AgeBin, age_difference)
+table_one <- tableby(AgeBin ~ ., data = summary_table)
+summary(table_one, text = TRUE)
+
+t.test(age_difference ~ AgeBin, data = summary_table)
+
+ggplot(summary_table, aes(x = AgeBin, y = age_difference)) + geom_jitter() + stat_compare_means() + geom_boxplot() +theme_bw()
+```
+
+```{r}
+
+ASD_nonID$AgeBin <- factor(ASD_nonID$AgeBin, levels = c("6-15", "15-22", "22-31"))
+
+# Tell tableby exactly which statistics you want for numeric variables
+my_controls <- tableby.control(
+  numeric.stats = c("N", "mean", "sd", "range")
+)
+# 3. Create the table using the formula: GroupingVariable ~ Var1 + Var2 + Var3
+tab <- tableby(AgeBin ~ Vineland_difference + 
+                        t1_vabsabcabc_standard + 
+                        t2_vabsabcabc_standard, 
+               data = ASD_nonID, 
+               control = my_controls)
+
+# 4. Print the summary of the table
+# (Using text = TRUE makes it print nicely right in your R console)
+summary(tab)
+```
+
+#SRS Tscore self vs parent
+```{r}
+MS <- ggplot(ASD_nonID, aes(x = t1_srs_tscore_parent, y = t1_srs_tscore_self)) + geom_point()+
+  geom_smooth(method='lm', se = FALSE)+
+  stat_cor(method = "pearson") + theme_bw()
+MS
+```
+
+#SRS rolling with age average
+Prepare data
+```{r}
+b_nonID <- filter(b, ID_nonID == 'nonID')
+ASD_nonID <- filter(b_nonID, t1_group == 'ASD')
+ASD_SRS <- filter(ASD_nonID, t1_srs_tscore_parent != 'NA')
+
+# Define the list of predictors from your formula
+ASD_SRS$age_for_filtering <- ASD_SRS$t1_age_years
+
+predictors <- c(
+  "PLV_6_9_DK_mean_SWI", "t1_fsiq",
+                "PLV_6_9_DK_mean_mean_degree",
+                "t1_vabsabcabc_standard", "t1_age_years","t1_age")
+
+# Scale only the predictors
+ASD_SRS <- ASD_SRS %>%
+  mutate(across(all_of(predictors), ~ as.numeric(scale(.))))
+```
+
+#SRS rolling MD
+```{r}
+
+# 1. First, order the participants by age
+SRS_ordered <- ASD_SRS %>%
+  arrange(age_for_filtering)
+
+# 2. Define the sliding window parameters
+window_size <- 60
+step_size <- 8
+total_n <- nrow(SRS_ordered)
+
+# Calculate the absolute last possible start index
+last_start_possible <- total_n - window_size + 1
+
+# Generate indices: 1, 6, 11... 
+start_indices <- seq(1, last_start_possible, by = step_size)
+
+# FEATURE: If the step sequence missed the final index (52), add it manually
+if (tail(start_indices, 1) != last_start_possible) {
+  start_indices <- c(start_indices, last_start_possible)
+}
+
+results_list <- list()
+
+# 3. The Sliding Loop (by index)
+# We stop when the window can no longer fit 30 participants
+for (start_idx in start_indices) {
+  
+  end_idx <- start_idx + window_size - 1
+  
+  # Extract the specific 30 participants for this bin
+  bin_data <- SRS_ordered[start_idx:end_idx, ]
+  
+  # Check for factor level diversity (e.g., both sexes must be present)
+  if (length(unique(bin_data$t1_sex)) > 1 
+      # && length(unique(bin_data$t1_site)) > 1
+      ) {
+    
+    # Run the GLM (Linear Model)
+    
+        m_bin <- lm(t1_srs_tscore_parent ~ PLV_6_9_DK_mean_mean_degree + t1_site + 
+                t1_age_years 
+                #+ 
+                , 
+                data = bin_data)
+    
+    # Extract stats for the specific predictor
+    stats <- tidy(m_bin) %>% 
+      filter(term == "PLV_6_9_DK_mean_mean_degree")
+    
+    if (nrow(stats) > 0) {
+      results_list[[paste0("idx_", start_idx)]] <- data.frame(
+        n_in_bin = nrow(bin_data),
+        min_age = min(bin_data$age_for_filtering, na.rm = TRUE),
+        max_age = max(bin_data$age_for_filtering, na.rm = TRUE),
+        avg_age = mean(bin_data$age_for_filtering, na.rm = TRUE),
+        beta_estimate = stats$estimate,
+        std_error = stats$std.error,
+        p_value = stats$p.value
+        
+      )
+    }
+  }
+}
+
+# 4. Combine into final dataframe
+rolling_results_idx <- bind_rows(results_list)
+
+rolling_results_idx <- rolling_results_idx %>%
+  mutate(p_FDR = p.adjust(p_value, method = "BH"))
+
+rolling_results_idx <- rolling_results_idx %>%
+  mutate(sig_star = ifelse(p_value < 0.05, "*", ""))
+
+#from the rolling results df, remove the second to last row
+rolling_results_idx <- rolling_results_idx[- (nrow(rolling_results_idx) - 1), ]
+
+# View the output
+print(rolling_results_idx)
+```
+
+
+```{r}
+rolling_MD = ggplot(rolling_results_idx, aes(x = avg_age, y = beta_estimate)) +
+  geom_hline(yintercept = 0, linetype = "dashed", size = 1) +
+  geom_line(color = "royalblue", size = 1) +
+  geom_point() +
+  geom_ribbon(aes(ymin = beta_estimate - std_error, 
+                  ymax = beta_estimate + std_error), 
+              alpha = 0.2, fill = "royalblue") +
+  labs(title = "a) Effect size of MD on SRS T-score across age",
+       x = "Average Age in Bin",
+       y = "Estimated coefficient - MD") +
+  geom_text(aes(label = sig_star, y = 1), 
+            size = 8, 
+            color = "black") +
+  scale_x_continuous(breaks = seq(6, 32, by = 2)) +
+  theme_minimal()+
+    theme(aspect.ratio = 0.6,panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15))
+
+rolling_MD
+```
+
+#SRS rolling SWI
+```{r}
+
+# 1. First, order the participants by age
+SRS_ordered <- ASD_SRS %>%
+  arrange(age_for_filtering)
+
+# 2. Define the sliding window parameters
+window_size <- 60
+step_size <- 8
+total_n <- nrow(SRS_ordered)
+
+# Calculate the absolute last possible start index
+last_start_possible <- total_n - window_size + 1
+
+# Generate indices: 1, 6, 11... 
+start_indices <- seq(1, last_start_possible, by = step_size)
+
+# FEATURE: If the step sequence missed the final index (52), add it manually
+if (tail(start_indices, 1) != last_start_possible) {
+  start_indices <- c(start_indices, last_start_possible)
+}
+
+results_list <- list()
+
+# 3. The Sliding Loop (by index)
+# We stop when the window can no longer fit 30 participants
+for (start_idx in start_indices) {
+  
+  end_idx <- start_idx + window_size - 1
+  
+  # Extract the specific 30 participants for this bin
+  bin_data <- SRS_ordered[start_idx:end_idx, ]
+  
+  # Check for factor level diversity (e.g., both sexes must be present)
+  if (length(unique(bin_data$t1_sex)) > 1 
+      # && length(unique(bin_data$t1_site)) > 1
+      ) {
+    
+    # Run the GLM (Linear Model)
+    
+        m_bin <- lm(t1_srs_tscore_parent ~ PLV_6_9_DK_mean_SWI + t1_site + 
+                t1_age_years 
+                #+ 
+                , 
+                data = bin_data)
+    
+    # Extract stats for the specific predictor
+    stats <- tidy(m_bin) %>% 
+      filter(term == "PLV_6_9_DK_mean_SWI")
+    
+    if (nrow(stats) > 0) {
+      results_list[[paste0("idx_", start_idx)]] <- data.frame(
+        n_in_bin = nrow(bin_data),
+        min_age = min(bin_data$age_for_filtering, na.rm = TRUE),
+        max_age = max(bin_data$age_for_filtering, na.rm = TRUE),
+        avg_age = mean(bin_data$age_for_filtering, na.rm = TRUE),
+        beta_estimate = stats$estimate,
+        std_error = stats$std.error,
+        p_value = stats$p.value
+        
+      )
+    }
+  }
+}
+
+# 4. Combine into final dataframe
+rolling_results_idx <- bind_rows(results_list)
+
+rolling_results_idx <- rolling_results_idx %>%
+  mutate(p_FDR = p.adjust(p_value, method = "BH"))
+
+rolling_results_idx <- rolling_results_idx %>%
+  mutate(sig_star = ifelse(p_value < 0.05, "*", ""))
+
+#from the rolling results df, remove the second to last row
+rolling_results_idx <- rolling_results_idx[- (nrow(rolling_results_idx) - 1), ]
+
+# View the output
+print(rolling_results_idx)
+```
+
+
+```{r}
+rolling_MD = ggplot(rolling_results_idx, aes(x = avg_age, y = beta_estimate)) +
+  geom_hline(yintercept = 0, linetype = "dashed", size = 1) +
+  geom_line(color = "royalblue", size = 1) +
+  geom_point() +
+  geom_ribbon(aes(ymin = beta_estimate - std_error, 
+                  ymax = beta_estimate + std_error), 
+              alpha = 0.2, fill = "royalblue") +
+  labs(title = "b) Effect size of SWI on SRS T-score across age",
+       x = "Average Age in Bin",
+       y = "Estimated coefficient - SWI") +
+  geom_text(aes(label = sig_star, y = 5), 
+            size = 8, 
+            color = "black") +
+  scale_x_continuous(breaks = seq(6, 32, by = 2)) +
+  theme_minimal()+
+    theme(aspect.ratio = 0.6,panel.background = element_rect(fill = "white", colour = "black"), plot.title = element_text(hjust = 0.5, size=16), axis.title.y = element_text(size = 15), axis.title.x = element_text(size = 15))
+
+rolling_MD
+```
